@@ -14,3 +14,12 @@
   * download pdf-tools: `https://blog.didierstevens.com/programs/pdf-tools/`
   * Run command `python3 defaultfeatures.py`
   <br/>
+4.js_ex.py for extract information about JavaScript:
+
+  * download git: `https://github.com/Aurore54F/JaSt`
+  * Run command `python3 js_ex.py`
+  <br/>
+5.union.py for classificate pdf files:
+
+  * Run command `python3 union.py`
+  <br/>
