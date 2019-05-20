@@ -3,8 +3,7 @@
 # Date 05.2019
 
 # libraries
-#import pyPdf
-import PyPDF2
+from PyPDF2 import PdfFileReader
 import re
 import subprocess
 import os
@@ -101,23 +100,24 @@ def pdfJS(filename):
     num_evals = 0
     num_slashx = 0
     num_slashu0 = 0
-    kind_js = 0  # no - 0, valid - 50, malformed - 100
-
+    no_js = 1  # no - 0, valid - 50, malformed - 100
+    valid_js = 0
+    malformed_js = 0
+    encoding = 0
     ex_js(filename)
     # handling the case that previous file failed to parse
     errorfile = os.path.isfile(errorfile_path)  # holds boolean value
     if errorfile:
         os.remove(errorfile_path)
         print(filename + " failed parsing!")
-        features = [-1, -1, -1, -1, -1, -1, -1]
-        return features
+        features = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+        return False, features
     else:
-        fi_na = open(str(texts_path) + '/' + str(filename) +
-                     '.txt', 'w+')  # open text file for current file
+        fi_na = open(str(texts_path) + '/' + str(filename) +'.txt', 'w+')  # open text file for current file
         temp_file = open(str(code_path) + '/JSfromPDF.txt', 'r')
         # copy content from temp file to text file
         try:
-            for line in temp_file.readlines():
+            for line in str(temp_file.readlines()):
                 fi_na.write(line)
                 if "// peepdf comment: Javascript code located in object" in line:
                     num_objects = num_objects + 1
@@ -129,7 +129,7 @@ def pdfJS(filename):
                 num_slashx = num_slashx + line.count("\\x")
                 num_slashu0 = num_slashu0 + line.count("\\u")
         except:
-            print(temp_file)
+            encoding = -1
         temp_file.close()
         fi_na.close()
 
@@ -143,9 +143,11 @@ def pdfJS(filename):
             isjs.wait()
             for line in isjs.stdout:
                 if "malformed" in str(line):
-                    kind_js = 100
+                    malformed_js = 1
+                    no_js = 0
                 elif " valid" in str(line):
-                    kind_js = 50
+                    valid_js = 1
+                    no_js = 0
 
         # save and print features
         features = [
@@ -155,8 +157,11 @@ def pdfJS(filename):
             num_evals,
             num_slashx,
             num_slashu0,
-            kind_js]
-        return features
+            no_js,
+            valid_js,
+            malformed_js,
+            encoding]
+        return True, features
 
 # function for part of Entropy
 # ans[0] - total_entropy; ans[1] - entropy_inside; ans[2] - entropy_outside
@@ -164,127 +169,58 @@ def pdfJS(filename):
 def entropy(filename):
     try:
         ans = []
-        p = subprocess.Popen(
-            [
-                'python',
-                '/home/tzar/Desktop/Final_Project/phase4/AnalyzePDF-master/AnalyzePDF.py',
-                filename],
-            stdout=subprocess.PIPE)
+        filename = samples_path+filename.replace('\n','')
+        p = subprocess.Popen(['python', '/home/tzar/Desktop/Final_Project/phase4/AnalyzePDF-master/AnalyzePDF.py', filename], stdout=subprocess.PIPE)
+        p.wait()
         for line in p.stdout:
+            line = str(line)
             pattern = r"(\d+.\d+)"
             num = re.search(pattern, line).group()
             ans.append(float(num))
-        return ans
+        return True, ans
     except Exception:
         ex = [-1, -1, -1]
-        return ex
+        return False, ex
 
 # function for part of pdfid.py
 def defaultJS(filename):
     try:
         ans = []
-        p = subprocess.Popen(['python',
-                              '/home/tzar/Desktop/Final_Project/phase4/pdfid_v0_2_5/pdfid.py',
-                              filename],
-                             stdout=subprocess.PIPE)
+        filename = samples_path+filename.replace('\n','')
+        p = subprocess.Popen(['python', '/home/tzar/Desktop/Final_Project/phase4/pdfid_v0_2_5/pdfid.py', filename], stdout=subprocess.PIPE)
+        p.wait()
         for line in p.stdout:
+            line = str(line)
             if '%PDF' in line or line.startswith('PDFiD'):
                 continue
-            pattern1 = r"^\s*(\S+)\s+(\d+)"
+            pattern1 = r"\s*(\S+)\s+(\d+)"
             m = re.search(pattern1, line)
             if m is not None:
                 key = m.group(1)
                 if key in default_features:
                     ans.append(int(m.group(2)))
-        return ans
+        return True, ans
     except Exception:
         ex = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
-        return ex
+        return False, ex
 
 # function for part of URLs
 def URLs(filename):
     try:
-        pdf = pyPdf.PdfFileReader(open(filename))
-        lst = list(pdf.pages) 				# Process all the objects.
-        pdfObjects = pdf.resolvedObjects
-        set_urls = []
-        counter_urls = 0
-        counter_objects = 0
-        counter_badWORDS = 0
-        counter_ports = 0
-        counter_fileURL = 0
-        max_length = 0
-        counter_IP = 0
-        counter_secondLINK = 0
-        counter_encoded = 0
-        for key, value in pdfObjects.iteritems():
-            for keyL, valueL in value.iteritems():
-                u = valueL.getObject()
-                counter_objects += 1
-                try:
-                    if uri in u:
-                        counter_urls += 1
-                        # File:
-                        if(-1 != u[uri].find("File:") or -1 != u[uri].find("file:")):
-                            counter_fileURL += 1
-                            continue
-                        url = re.search(
-                            r"(?P<url>(?:http|ftp)s?://[^\s]+)",
-                            u[uri]).group("url")
-                        url = url.encode("ascii", "ignore")
-                        if url not in set_urls:
-                            set_urls.append(url)
-                except BaseException:
-                    continue
-        for url in set_urls:
-            # second link
-            if(re.search(r'((?:http|ftp)s?(%[0-9a-fA-F]+)(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)', url)):
-                counter_secondLINK += 1
-            # encoded
-            if(re.search("(%[0-9a-fA-F]+)", url)):
-                counter_encoded += 1
-            # IP
-            if(re.search(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", url)):
-                counter_IP += 1
-            # bad words
-            for word in bad_word:
-                if(-1 != url.find(word)):
-                    counter_badWORDS += 1
-                    break
-            # ports
-            if(re.search(r"(:\d{1,5}/)", url)):
-                port = re.search(r"(:\d{1,5}/)", url).group()
-                flag = True
-                for p_g in port_good:
-                    if(port == p_g):
-                        flag = False
-                        break
-                if (flag):
-                    counter_ports += 1
-            try:
-                # length after second '/'
-                substring = re.search(
-                    r'(?:http|ftp)s?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+/',
-                    url).group()
-                leng = len(url.replace(substring, ''))
-                if (leng > max_length):
-                    max_length = leng
-            except BaseException:
-                continue
-        ans = [
-            counter_urls,
-            len(set_urls),
-            counter_fileURL,
-            max_length,
-            counter_secondLINK,
-            counter_encoded,
-            counter_IP,
-            counter_badWORDS,
-            counter_ports]
-        return ans
-    except Exception:
+        filename = samples_path+filename.replace('\n','')
+        p = subprocess.Popen(['python', '/home/tzar/Desktop/Final_Project/phase4/support_union.py', filename], stdout = subprocess.PIPE)
+        p.wait()
+        out, err = p.communicate()
+        out = str(out)
+        out = out.replace('b\'','').replace('\\n\'','').replace('[','').replace(']','').split(',')
+        if ('-1' in out[0]):
+            return False, list(map(int, out))
+        out = list(map(int, out))
+        return True, out
+    except Exception as vv:
+        print(vv)
         ex = [-1, -1, -1, -1, -1, -1, -1, -1, -1]
-        return ex
+        return False, ex
 
 
 if __name__ == '__main__':
@@ -298,28 +234,39 @@ if __name__ == '__main__':
     d = dict()
     features = []
     labels = []
+    err = [0, 0, 0, 0, 0, 0, 0, 0]
     for root, dirs, file_names in os.walk(os.getcwd()):
         for (i, file) in enumerate(file_names):
             if ("mal" == file.split(".")[0]):
                 label = 1
             else:
                 label = 0
-            ans = defaultJS(file)
-            urls = URLs(file)
-            js = pdfJS(file)
-            entropies = entropy(file)
+            flag, ans = defaultJS(file)
+            if (not flag):
+                err[0+label] += 1
+            flag, urls = URLs(file)
+            if (not flag):
+                err[2+label] += 1
+            flag, js = pdfJS(file)
+            if (not flag):
+                err[4+label] += 1
+            flag, entropies = entropy(file)
+            if (not flag):
+                err[6+label] += 1
             ans = ans + urls
             ans = ans + js
             ans = ans + entropies
             ans = np.array(ans)
             features.append(ans)
             labels.append(label)
-            # show an update every 50 images
+            # show an update every 50 pdfs
             if (i > 0 and i % 50 == 0):
                 print("[INFO] processed {}/{}".format(i, len(file_names)))
     features = np.array(features)
     labels = np.array(labels)
-
+    print("This is error--------------------------------------------------------")
+    print(err)
+    print("---------------------------------------------------------------------")
     # partition the data into training and testing splits, using 75%
     # of the data for training and the remaining 25% for testing
     X_train, X_test, y_train, y_test = train_test_split(
@@ -374,3 +321,31 @@ if __name__ == '__main__':
     # the count of true negatives is A00, false negatives is A10, true
     # positives is A11 and false positives is A01
     print('confusion matrix:\n %s' % cm)
+
+    # K-Nearest Neighbors
+    print("K-Nearest Neighbors")
+    knn = Pipeline([('clf', KNeighborsClassifier(n_neighbors=3)), ])
+    knn.fit(X_train, y_train)
+    y_pred = knn.predict(X_test)
+
+    print('accuracy %s' % accuracy_score(y_pred, y_test))
+    print(classification_report(y_test, y_pred, target_names=my_tags))
+    cm = confusion_matrix(y_test, y_pred)
+    # the count of true negatives is A00, false negatives is A10, true
+    # positives is A11 and false positives is A01
+    print('confusion matrix:\n %s' % cm)
+    print("\n\n")
+
+    # Multi-layer Perceptron
+    print("Multi-layer Perceptron")
+    mlp = Pipeline([('clf', MLPClassifier(activation='relu', solver='lbfgs', alpha=1e-5, hidden_layer_sizes=(15,), random_state=1, tol=0.000000001)),])
+    mlp.fit(X_train, y_train)
+    y_pred = mlp.predict(X_test)
+
+    print('accuracy %s' % accuracy_score(y_pred, y_test))
+    print(classification_report(y_test, y_pred, target_names=my_tags))
+    cm = confusion_matrix(y_test, y_pred)
+    # the count of true negatives is A00, false negatives is A10, true
+    # positives is A11 and false positives is A01
+    print('confusion matrix:\n %s' % cm)
+    print("\n\n")
